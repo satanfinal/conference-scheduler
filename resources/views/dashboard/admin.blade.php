@@ -1,0 +1,160 @@
+@extends('layouts.app')
+
+@section('title', 'Admin Dashboard')
+
+@section('content')
+    <main class="page">
+        <div class="page-header">
+            <h1>Admin Dashboard</h1>
+            <p>Welcome back, {{ auth()->user()->name }}. Manage sessions, speakers, tracks and users from here.</p>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(5, 1fr); gap: 20px; margin-bottom: 24px;">
+            <div class="card">
+                <h2 style="font-size: 34px; margin: 0;">{{ $totalEvents }}</h2>
+                <p style="color: #6b7280; margin-bottom: 0;">Sessions</p>
+            </div>
+
+            <div class="card">
+                <h2 style="font-size: 34px; margin: 0;">{{ $totalSpeakers }}</h2>
+                <p style="color: #6b7280; margin-bottom: 0;">Speakers</p>
+            </div>
+
+            <div class="card">
+                <h2 style="font-size: 34px; margin: 0;">{{ $totalCategories }}</h2>
+                <p style="color: #6b7280; margin-bottom: 0;">Tracks</p>
+            </div>
+
+            <div class="card">
+                <h2 style="font-size: 34px; margin: 0;">{{ $totalUsers }}</h2>
+                <p style="color: #6b7280; margin-bottom: 0;">Users</p>
+            </div>
+
+            <div class="card">
+                <h2 style="font-size: 34px; margin: 0;">{{ $totalRsvps }}</h2>
+                <p style="color: #6b7280; margin-bottom: 0;">RSVPs</p>
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Admin Quick Actions</h2>
+
+            <div style="display: flex; gap: 12px; flex-wrap: wrap;">
+                <a class="btn" href="{{ url('/events/create') }}">Create Session</a>
+                <a class="btn" href="{{ url('/speakers/create') }}">Add Speaker</a>
+                <a class="btn" href="{{ url('/users') }}">Manage Users</a>
+                <a class="btn btn-secondary" href="{{ url('/category') }}">View Tracks</a>
+            </div>
+        </div>
+
+        <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 20px;">
+            <div class="card">
+                <h2>Latest Sessions</h2>
+
+                @if($latestEvents->count() > 0)
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Session</th>
+                                <th>Time</th>
+                                <th>Details</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            @foreach($latestEvents as $event)
+                                <tr>
+                                    <td>{{ $event->title ?? 'Untitled Session' }}</td>
+                                    <td>
+                                        @if($event->start_time)
+                                            {{ \Carbon\Carbon::parse($event->start_time)->format('M d, Y H:i') }}
+                                        @else
+                                            No time
+                                        @endif
+                                    </td>
+                                    <td>
+                                        <a class="btn" href="{{ url('/events/' . $event->id) }}">View</a>
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                @else
+                    <p class="empty">No sessions have been created yet.</p>
+                @endif
+            </div>
+
+            <div class="card">
+                <h2>Latest Users</h2>
+
+                @if($latestUsers->count() > 0)
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Name</th>
+                                <th>Email</th>
+                                <th>Role</th>
+                            </tr>
+                        </thead>
+
+                        <tbody>
+                            @foreach($latestUsers as $user)
+                                @php
+                                    $speakerProfile = \App\Models\Speaker::where('user_id', $user->id)->first();
+                                @endphp
+
+                                <tr>
+                                    <td>{{ $user->name }}</td>
+                                    <td>{{ $user->email }}</td>
+                                    <td>
+                                        @if($user->is_admin)
+                                            Admin
+                                        @elseif($speakerProfile)
+                                            Speaker
+                                        @else
+                                            Attendee
+                                        @endif
+                                    </td>
+                                </tr>
+                            @endforeach
+                        </tbody>
+                    </table>
+                @else
+                    <p class="empty">No users found.</p>
+                @endif
+            </div>
+        </div>
+
+        <div class="card">
+            <h2>Latest Speakers</h2>
+
+            @if($latestSpeakers->count() > 0)
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Speaker</th>
+                            <th>Topic</th>
+                            <th>Track</th>
+                            <th>Profile</th>
+                        </tr>
+                    </thead>
+
+                    <tbody>
+                        @foreach($latestSpeakers as $speaker)
+                            <tr>
+                                <td>{{ $speaker->name }}</td>
+                                <td>{{ $speaker->topic }}</td>
+                                <td>{{ $speaker->category->name ?? 'No track' }}</td>
+                                <td>
+                                    <a class="btn" href="{{ url('/speakers/' . $speaker->id) }}">View</a>
+                                </td>
+                            </tr>
+                        @endforeach
+                    </tbody>
+                </table>
+            @else
+                <p class="empty">No speakers have been created yet.</p>
+            @endif
+        </div>
+    </main>
+@endsection
