@@ -3,163 +3,282 @@
 namespace App\Http\Controllers;
 
 use Illuminate\Http\Request;
+
 use App\Models\Event;
 use App\Models\Speaker;
 use App\Models\Category;
 
 class EventController extends Controller
 {
+    /**
+     * Get the currently logged in speaker profile
+     */
     private function currentSpeakerProfile()
     {
         return Speaker::where('user_id', auth()->id())->first();
     }
 
-    private function canManageEvent($event)
+    /**
+     * Check whether the current user can manage the event
+     */
+    private function canManageEvent(Event $event): bool
     {
+        // Admin can manage all sessions
         if (auth()->user()->is_admin) {
             return true;
         }
 
         $speakerProfile = $this->currentSpeakerProfile();
 
-        return $speakerProfile && $event->speaker_id == $speakerProfile->id;
+        // Speakers can only manage their own sessions
+        return $speakerProfile
+            && $event->speaker_id == $speakerProfile->id;
     }
 
+    /**
+     * Shared validation rules for event forms
+     */
+    private function validationRules(): array
+    {
+        return [
+            'title' => 'required|string|max:255',
+
+            'description' => 'required|string',
+
+            'start_time' => 'required|date',
+
+            'end_time' => 'required|date|after:start_time',
+
+            'meeting_link' => 'nullable|url',
+
+            'speaker_id' => 'nullable',
+
+            'category_id' => 'nullable',
+        ];
+    }
+
+    /**
+     * Get speakers list depending on role
+     */
+    private function availableSpeakers()
+    {
+        $speakerProfile = $this->currentSpeakerProfile();
+
+        return auth()->user()->is_admin
+            ? Speaker::all()
+            : Speaker::where('id', $speakerProfile->id)->get();
+    }
+
+    /**
+     * Display all conference sessions
+     */
     public function index()
     {
-        $events = Event::with(['speaker', 'category'])
+        $events = Event::with([
+                'speaker',
+                'category'
+            ])
             ->orderBy('start_time', 'asc')
-            ->get();
+            ->paginate(5);
 
         return view('events.index', compact('events'));
     }
 
+    /**
+     * Show create event form
+     */
     public function create()
     {
         $speakerProfile = $this->currentSpeakerProfile();
 
-        if (!auth()->user()->is_admin && !$speakerProfile) {
-            abort(403, 'Only admins and speakers can create conference sessions.');
+        // Prevent attendees from creating sessions
+        if (
+            !auth()->user()->is_admin
+            && !$speakerProfile
+        ) {
+            abort(
+                403,
+                'Only admins and speakers can create conference sessions.'
+            );
         }
 
-        $speakers = auth()->user()->is_admin
-            ? Speaker::all()
-            : Speaker::where('id', $speakerProfile->id)->get();
+        $speakers = $this->availableSpeakers();
 
         $categories = Category::all();
 
-        return view('events.create', compact('speakers', 'categories'));
+        return view(
+            'events.create',
+            compact('speakers', 'categories')
+        );
     }
 
-    public function store(Request $req)
+    /**
+     * Store a newly created session
+     */
+    public function store(Request $request)
     {
         $speakerProfile = $this->currentSpeakerProfile();
 
-        if (!auth()->user()->is_admin && !$speakerProfile) {
-            abort(403, 'Only admins and speakers can create conference sessions.');
+        // Prevent attendees from creating sessions
+        if (
+            !auth()->user()->is_admin
+            && !$speakerProfile
+        ) {
+            abort(
+                403,
+                'Only admins and speakers can create conference sessions.'
+            );
         }
 
-        $req->validate([
-            'title' => 'required|string|max:255',
-            'description' => 'required|string',
-            'start_time' => 'required|date',
-            'end_time' => 'required|date|after:start_time',
-            'meeting_link' => 'nullable|url',
-            'speaker_id' => 'nullable',
-            'category_id' => 'nullable',
-        ]);
+        // Validate request data
+        $validated = $request->validate(
+            $this->validationRules()
+        );
 
+        // Admin can select speaker
+        // Speaker users automatically become session owner
         $speakerId = auth()->user()->is_admin
-            ? $req->speaker_id
+            ? $request->speaker_id
             : $speakerProfile->id;
 
         Event::create([
-            'title' => $req->title,
-            'description' => $req->description,
-            'start_time' => $req->start_time,
-            'end_time' => $req->end_time,
-            'meeting_link' => $req->meeting_link,
+            'title' => $validated['title'],
+
+            'description' => $validated['description'],
+
+            'start_time' => $validated['start_time'],
+
+            'end_time' => $validated['end_time'],
+
+            'meeting_link' => $validated['meeting_link'] ?? null,
+
             'speaker_id' => $speakerId,
-            'category_id' => $req->category_id,
+
+            'category_id' => $validated['category_id'] ?? null,
+
             'user_id' => auth()->id(),
         ]);
 
-        return redirect('/events')->with('msg', 'Conference session created successfully.');
+        return redirect('/events')
+            ->with(
+                'msg',
+                'Conference session created successfully.'
+            );
     }
 
-    public function show($id)
+    /**
+     * Display event details
+     */
+    public function show(Event $event)
     {
-        $event = Event::with(['speaker', 'category'])->findOrFail($id);
+        $event->load([
+            'speaker',
+            'category'
+        ]);
 
-        return view('events.show', compact('event'));
+        return view(
+            'events.show',
+            compact('event')
+        );
     }
 
-    public function edit($id)
+    /**
+     * Show edit session form
+     */
+    public function edit(Event $event)
     {
-        $event = Event::findOrFail($id);
-
+        // Authorization check
         if (!$this->canManageEvent($event)) {
-            abort(403, 'You can only edit sessions you manage.');
+            abort(
+                403,
+                'You can only edit sessions you manage.'
+            );
         }
 
-        $speakerProfile = $this->currentSpeakerProfile();
-
-        $speakers = auth()->user()->is_admin
-            ? Speaker::all()
-            : Speaker::where('id', $speakerProfile->id)->get();
+        $speakers = $this->availableSpeakers();
 
         $categories = Category::all();
 
-        return view('events.edit', compact('event', 'speakers', 'categories'));
+        return view(
+            'events.edit',
+            compact(
+                'event',
+                'speakers',
+                'categories'
+            )
+        );
     }
 
-    public function update(Request $req, $id)
-    {
-        $event = Event::findOrFail($id);
-
+    /**
+     * Update conference session
+     */
+    public function update(
+        Request $request,
+        Event $event
+    ) {
+        // Authorization check
         if (!$this->canManageEvent($event)) {
-            abort(403, 'You can only update sessions you manage.');
+            abort(
+                403,
+                'You can only update sessions you manage.'
+            );
         }
 
-        $req->validate([
-            'title' => 'required|string|max:255',
-            'description' => 'required|string',
-            'start_time' => 'required|date',
-            'end_time' => 'required|date|after:start_time',
-            'meeting_link' => 'nullable|url',
-            'speaker_id' => 'nullable',
-            'category_id' => 'nullable',
-        ]);
+        // Validate request
+        $validated = $request->validate(
+            $this->validationRules()
+        );
 
         $speakerProfile = $this->currentSpeakerProfile();
 
+        // Admin can select speaker
+        // Speaker users automatically become owner
         $speakerId = auth()->user()->is_admin
-            ? $req->speaker_id
+            ? $request->speaker_id
             : $speakerProfile->id;
 
         $event->update([
-            'title' => $req->title,
-            'description' => $req->description,
-            'start_time' => $req->start_time,
-            'end_time' => $req->end_time,
-            'meeting_link' => $req->meeting_link,
+            'title' => $validated['title'],
+
+            'description' => $validated['description'],
+
+            'start_time' => $validated['start_time'],
+
+            'end_time' => $validated['end_time'],
+
+            'meeting_link' => $validated['meeting_link'] ?? null,
+
             'speaker_id' => $speakerId,
-            'category_id' => $req->category_id,
+
+            'category_id' => $validated['category_id'] ?? null,
         ]);
 
-        return redirect('/events/' . $event->id)->with('msg', 'Conference session updated successfully.');
+        return redirect('/events/' . $event->id)
+            ->with(
+                'msg',
+                'Conference session updated successfully.'
+            );
     }
 
-    public function destroy($id)
+    /**
+     * Delete conference session
+     */
+    public function destroy(Event $event)
     {
-        $event = Event::findOrFail($id);
-
+        // Authorization check
         if (!$this->canManageEvent($event)) {
-            abort(403, 'You can only delete sessions you manage.');
+            abort(
+                403,
+                'You can only delete sessions you manage.'
+            );
         }
 
         $event->delete();
 
-        return redirect('/events')->with('msg', 'Conference session deleted successfully.');
+        return redirect('/events')
+            ->with(
+                'msg',
+                'Conference session deleted successfully.'
+            );
     }
 }
