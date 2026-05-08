@@ -3,71 +3,135 @@
 namespace App\Http\Controllers;
 
 use App\Models\User;
+
 use Illuminate\Http\Request;
+
 use Illuminate\Validation\Rule;
 
 class UserController extends Controller
 {
-    private function blockNormalUsers()
+    /**
+     * Restrict normal users from accessing admin pages
+     */
+    private function blockNormalUsers(): void
     {
         if (!auth()->user()->is_admin) {
-            abort(403, 'Only admins can manage users.');
+
+            abort(
+                403,
+                'Only admins can manage users.'
+            );
         }
     }
 
+    /**
+     * Shared validation rules for user forms
+     */
+    private function validationRules(User $user): array
+    {
+        return [
+
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+            ],
+
+            'email' => [
+                'required',
+                'email',
+
+                Rule::unique('users')
+                    ->ignore($user->id),
+            ],
+        ];
+    }
+
+    /**
+     * Display all registered users
+     */
     public function index()
     {
+        // Authorization check
         $this->blockNormalUsers();
 
-        $users = User::latest()->get();
+        $users = User::latest()
+            ->paginate(10);
 
-        return view('users.index', compact('users'));
+        return view(
+            'users.index',
+            compact('users')
+        );
     }
 
-    public function edit($id)
+    /**
+     * Show edit user form
+     */
+    public function edit(User $user)
     {
+        // Authorization check
         $this->blockNormalUsers();
 
-        $user = User::findOrFail($id);
-
-        return view('users.edit', compact('user'));
+        return view(
+            'users.edit',
+            compact('user')
+        );
     }
 
-    public function update(Request $request, $id)
-    {
+    /**
+     * Update user information
+     */
+    public function update(
+        Request $request,
+        User $user
+    ) {
+        // Authorization check
         $this->blockNormalUsers();
 
-        $user = User::findOrFail($id);
+        // Validate incoming request
+        $validated = $request->validate(
+            $this->validationRules($user)
+        );
 
-        $request->validate([
-    'name' => 'required|string|max:255',
-    'email' => [
-        'required',
-        'email',
-        Rule::unique('users')->ignore($user->id),
-    ],
-]);
-
+        // Update user account
         $user->update([
-    'name' => $request->name,
-    'email' => $request->email,
-]);
 
-        return redirect('/users')->with('msg', 'User updated successfully.');
+            'name' => $validated['name'],
+
+            'email' => $validated['email'],
+        ]);
+
+        return redirect('/users')
+            ->with(
+                'msg',
+                'User updated successfully.'
+            );
     }
 
-    public function destroy($id)
+    /**
+     * Delete selected user
+     */
+    public function destroy(User $user)
     {
+        // Authorization check
         $this->blockNormalUsers();
 
-        $user = User::findOrFail($id);
-
+        // Prevent admin from deleting own account
         if ($user->id === auth()->id()) {
-            return redirect('/users')->with('error', 'You cannot delete your own account while logged in.');
+
+            return redirect('/users')
+                ->with(
+                    'error',
+                    'You cannot delete your own account while logged in.'
+                );
         }
 
         $user->delete();
 
-        return redirect('/users')->with('msg', 'User deleted successfully.');
+        return redirect('/users')
+            ->with(
+                'msg',
+                'User deleted successfully.'
+            );
     }
 }
