@@ -3,58 +3,113 @@
 namespace App\Http\Controllers;
 
 use App\Models\Category;
-use App\Models\Speaker;
-use App\Models\Event;
 use Illuminate\Http\Request;
 
 class CategoryController extends Controller
 {
-    public function index()
-    {
-        $categories = Category::all();
-
-        return view('categories.index', compact('categories'));
-    }
-
-    public function create()
+    /**
+     * Restrict category management to admins only
+     */
+    private function blockNormalUsers(): void
     {
         if (!auth()->user()->is_admin) {
-            abort(403, 'Only admins can create categories.');
+
+            abort(
+                403,
+                'Only admins can manage categories.'
+            );
         }
+    }
+
+    /**
+     * Shared validation rules for category forms
+     */
+    private function validationRules(): array
+    {
+        return [
+
+            'name' => [
+                'required',
+                'string',
+                'max:255',
+            ],
+        ];
+    }
+
+    /**
+     * Display all conference categories
+     */
+    public function index()
+    {
+        $categories = Category::latest()
+            ->paginate(5);
+
+        return view(
+            'categories.index',
+            compact('categories')
+        );
+    }
+
+    /**
+     * Show category creation form
+     */
+    public function create()
+    {
+        // Authorization check
+        $this->blockNormalUsers();
 
         return view('categories.create');
     }
 
+    /**
+     * Store newly created category
+     */
     public function store(Request $request)
     {
-        if (!auth()->user()->is_admin) {
-            abort(403, 'Only admins can create categories.');
-        }
+        // Authorization check
+        $this->blockNormalUsers();
 
-        $request->validate([
-            'name' => 'required|string|max:255',
-        ]);
+        // Validate incoming data
+        $validated = $request->validate(
+            $this->validationRules()
+        );
 
+        // Prevent duplicate category creation
         Category::firstOrCreate([
-            'name' => $request->name,
+
+            'name' => $validated['name'],
         ]);
 
-        return redirect('/category')->with('msg', 'Category created successfully.');
+        return redirect('/category')
+            ->with(
+                'msg',
+                'Category created successfully.'
+            );
     }
 
-    public function show($id)
+    /**
+     * Display selected category details
+     */
+    public function show(Category $category)
     {
-        $category = Category::findOrFail($id);
-
-        $speakers = Speaker::where('category_id', $category->id)
+        // Related speakers
+        $speakers = $category->speakers()
             ->latest()
-            ->get();
+            ->paginate(5);
 
-        $events = Event::with('speaker')
-            ->where('category_id', $category->id)
+        // Related conference sessions
+        $events = $category->events()
+            ->with('speaker')
             ->orderBy('start_time', 'asc')
-            ->get();
+            ->paginate(5);
 
-        return view('categories.show', compact('category', 'speakers', 'events'));
+        return view(
+            'categories.show',
+            compact(
+                'category',
+                'speakers',
+                'events'
+            )
+        );
     }
 }
